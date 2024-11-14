@@ -4,7 +4,7 @@
     "compiler-version": ["error", "^0.8.0"],
     "func-visibility": ["warn", { "ignoreConstructors": true }],
     "compiler-fixed": false,
-    "quotes": ["error", "single"],
+    "quotes": ["off", "double"],
     "indent": [2]
   }
 }

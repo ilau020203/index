@@ -6,10 +6,10 @@ pragma solidity 0.8.28;
  * @notice Interface for the Atleta Lending price oracle.
  */
 interface IPriceOracleGetter {
-  /**
-   * @notice Returns the asset price in the base currency
-   * @param asset The address of the asset
-   * @return The price of the asset
-   */
-  function getAssetPrice(address asset) external view returns (uint256);
+    /**
+     * @notice Returns the asset price in the base currency
+     * @param asset The address of the asset
+     * @return The price of the asset
+     */
+    function getAssetPrice(address asset) external view returns (uint256);
 }
