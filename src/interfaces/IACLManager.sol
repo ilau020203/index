@@ -16,6 +16,12 @@ interface IACLManager is IAccessControl {
     function INDEX_ADMIN_ROLE() external view returns (bytes32);
 
     /**
+     * @dev Returns the keccak256 hash of the index manager role
+     * @return bytes32 The role identifier for index manager
+     */
+    function INDEX_MANAGER_ROLE() external view returns (bytes32);
+
+    /**
      * @dev Adds a new index admin
      * @param admin Address of the admin to add
      */
@@ -26,6 +32,18 @@ interface IACLManager is IAccessControl {
      * @param admin Address of the admin to remove
      */
     function removeIndexAdmin(address admin) external;
+
+    /**
+     * @dev Adds a new index manager
+     * @param manager Address of the manager to add
+     */
+    function addIndexManager(address manager) external;
+
+    /**
+     * @dev Removes an index manager
+     * @param manager Address of the manager to remove
+     */
+    function removeIndexManager(address manager) external;
 
     /**
      * @dev Sets the admin role that manages a role
