@@ -4,48 +4,29 @@ pragma solidity 0.8.28;
 import "../interfaces/IIndexManager.sol";
 import "../interfaces/ITokenIndex.sol";
 import "../interfaces/IPriceOracleGetter.sol";
-import "@uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol";
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
+/// @inheritdoc IIndexManager
 contract IndexManager is IIndexManager {
     using SafeERC20 for IERC20;
 
-    struct SwapInfo {
-        address tokenIn;
-        address tokenOut;
-        uint256 amountIn;
-    }
+    ITokenIndex public override tokenIndex;
+    IPriceOracleGetter public override priceOracle;
+    ISwapRouter public override swapRouter;
+    IERC20 public override baseToken;
+    IACLManager public override aclManager;
 
-    struct SwapParams {
-        address tokenIn;
-        address tokenOut;
-        uint256 amountIn;
-        uint256 amountOutMinimum;
-        bytes path;
-    }
-
-    ITokenIndex public tokenIndex;
-    IPriceOracleGetter public priceOracle;
-    ISwapRouter public swapRouter;
-    IERC20 public baseToken;
-    IACLManager public aclManager;
-
-    bytes32 public immutable INDEX_ADMIN_ROLE;
-    uint256 public constant FEE_PERIOD = 30 days;
-    uint256 public constant FEE_DENOMINATOR = 10000; // 10000 represents 100%
-    uint256 public lastFeeWithdrawal;
-    uint256 public feePercentage; // Fee percentage in basis points (1% = 100 basis points)
+    bytes32 public immutable override INDEX_ADMIN_ROLE;
+    uint256 public constant override FEE_PERIOD = 30 days;
+    uint256 public constant override FEE_DENOMINATOR = 10000; // 10000 represents 100%
+    uint256 public override lastFeeWithdrawal;
+    uint256 public override feePercentage; // Fee percentage in basis points (1% = 100 basis points)
     // Mapping to store paths for token pairs
-    mapping(address => mapping(address => bytes)) public tokenPaths;
-
-    error FeeWithdrawalTooSoon();
-    error InsufficientBalance();
+    mapping(address => mapping(address => bytes)) public override tokenPaths;
 
     modifier onlyIndexAdmin() {
-        require(
-            aclManager.hasRole(INDEX_ADMIN_ROLE, msg.sender), "Only index admins can call this function"
-        );
+        require(aclManager.hasRole(INDEX_ADMIN_ROLE, msg.sender), "Only index admins can call this function");
         _;
     }
 
@@ -67,7 +48,8 @@ contract IndexManager is IIndexManager {
         INDEX_ADMIN_ROLE = tokenIndex.INDEX_ADMIN_ROLE();
     }
 
-    function calculateRequiredSwaps(uint256 amount) public view returns (SwapInfo[] memory) {
+    /// @inheritdoc IIndexManager
+    function calculateRequiredSwaps(uint256 amount) public view override returns (SwapInfo[] memory) {
         ITokenIndex.TokenInfo[] memory tokenInfos = tokenIndex.getTokenProportions();
         (uint256[] memory deficitTokenIds, int256[] memory deficitDeltas, uint256 totalDeficit) =
             findDeficitTokens(tokenInfos);
@@ -167,7 +149,8 @@ contract IndexManager is IIndexManager {
         }
     }
 
-    function deposit(uint256 amount, address to) external {
+    /// @inheritdoc IIndexManager
+    function deposit(uint256 amount, address to) external override {
         baseToken.safeTransferFrom(msg.sender, address(this), amount);
         uint256 totalUSD = amount * priceOracle.getAssetPrice(address(baseToken));
         uint256 timeSinceLastFee = block.timestamp - lastFeeWithdrawal;
@@ -185,7 +168,8 @@ contract IndexManager is IIndexManager {
         tokenIndex.mint(to, indexTokenAmount);
     }
 
-    function withdraw(uint256 indexTokenAmount, address to) external {
+    /// @inheritdoc IIndexManager
+    function withdraw(uint256 indexTokenAmount, address to) external override {
         tokenIndex.burn(msg.sender, indexTokenAmount);
         uint256 userShare = indexTokenAmount * 1e18 / tokenIndex.totalSupply();
         uint256 timeSinceLastFee = block.timestamp - lastFeeWithdrawal;
@@ -207,7 +191,8 @@ contract IndexManager is IIndexManager {
         }
     }
 
-    function rebalance(SwapParams[] calldata swapParams) external onlyIndexAdmin {
+    /// @inheritdoc IIndexManager
+    function rebalance(SwapParams[] calldata swapParams) external override onlyIndexAdmin {
         bytes[] memory calls = new bytes[](swapParams.length);
 
         for (uint256 i = 0; i < swapParams.length; i++) {
@@ -315,7 +300,11 @@ contract IndexManager is IIndexManager {
         }
     }
 
-    function getCurrentProportions(ITokenIndex.TokenInfo[] memory tokenInfos) internal view returns (uint256[] memory proportions) {
+    function getCurrentProportions(ITokenIndex.TokenInfo[] memory tokenInfos)
+        internal
+        view
+        returns (uint256[] memory proportions)
+    {
         proportions = new uint256[](tokenInfos.length);
         uint256 totalValue = 0;
         uint256[] memory balances = new uint256[](tokenInfos.length);
@@ -350,11 +339,13 @@ contract IndexManager is IIndexManager {
         swapRouter.exactInput(params);
     }
 
-    function setTokenPath(address tokenIn, address tokenOut, bytes calldata path) external onlyIndexAdmin {
+    /// @inheritdoc IIndexManager
+    function setTokenPath(address tokenIn, address tokenOut, bytes calldata path) external override onlyIndexAdmin {
         tokenPaths[tokenIn][tokenOut] = path;
     }
 
-    function withdrawFees() external {
+    /// @inheritdoc IIndexManager
+    function withdrawFees() external override {
         uint256 periodsElapsed = (block.timestamp - lastFeeWithdrawal) / FEE_PERIOD;
         if (periodsElapsed == 0) {
             revert FeeWithdrawalTooSoon();
