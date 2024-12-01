@@ -29,11 +29,9 @@ interface ITokenIndex is IERC20, IERC20Permit {
     function INDEX_ADMIN_ROLE() external view returns (bytes32);
 
     /**
-     * @dev Approves a token for a manager
-     * @param token The address of the token to approve
-     * @param manager The address of the manager to approve the token
+     * @dev Returns the INDEX_MANAGER_ROLE bytes32 value
      */
-    function approveToken(address token, address manager) external;
+    function INDEX_MANAGER_ROLE() external view returns (bytes32);
 
     /**
      * @dev Adds a new token to the index with specified proportion
@@ -94,4 +92,17 @@ interface ITokenIndex is IERC20, IERC20Permit {
      * @param manager The address of the manager to approve the token
      */
     function approveToken(address token, address manager) external;
+
+    /**
+     * @dev Revokes the approval of a token for a manager
+     * @param token The address of the token to revoke approval
+     * @param manager The address of the manager to revoke approval
+     */
+    function revokeTokenApproval(address token, address manager) external;
+
+    /**
+     * @dev Allows batch execution of multiple index manager functions
+     * @param data Array of encoded function calls to execute
+     */
+    function multicall(bytes[] calldata data) external returns (bytes[] memory results);
 }

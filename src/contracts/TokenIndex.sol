@@ -14,9 +14,11 @@ contract TokenIndex is ERC20, ERC20Burnable, ERC20Permit, ITokenIndex {
     IACLManager public override aclManager;
 
     bytes32 public immutable override INDEX_ADMIN_ROLE;
+    bytes32 public immutable override INDEX_MANAGER_ROLE;
 
     error OnlyIndexAdmins();
     error InvalidProportion();
+    error OnlyIndexManagers();
     error InvalidIndex();
 
     /// @dev Constructor to initialize the token index
@@ -34,9 +36,20 @@ contract TokenIndex is ERC20, ERC20Burnable, ERC20Permit, ITokenIndex {
         _;
     }
 
+    /// @dev Modifier to restrict access to index managers only
+    modifier onlyIndexManager() {
+        require(aclManager.hasRole(INDEX_MANAGER_ROLE, msg.sender), OnlyIndexManagers());
+        _;
+    }
+
     /// @inheritdoc ITokenIndex
     function approveToken(address token, address manager) external onlyIndexAdmin {
         IERC20(token).approve(manager, type(uint256).max);
+    }
+
+    /// @inheritdoc ITokenIndex
+    function revokeTokenApproval(address token, address manager) external onlyIndexAdmin {
+        IERC20(token).approve(manager, 0);
     }
 
     /// @inheritdoc ITokenIndex
@@ -76,17 +89,28 @@ contract TokenIndex is ERC20, ERC20Burnable, ERC20Permit, ITokenIndex {
     }
 
     /// @inheritdoc ITokenIndex
-    function mint(address to, uint256 amount) external onlyIndexAdmin {
+    function mint(address to, uint256 amount) external onlyIndexManager {
         _mint(to, amount);
     }
 
     /// @inheritdoc ITokenIndex
-    function burn(address from, uint256 amount) external onlyIndexAdmin {
+    function burn(address from, uint256 amount) external onlyIndexManager {
         _burn(from, amount);
     }
 
     /// @inheritdoc IERC20Permit
     function nonces(address owner) public view override(ERC20Permit, IERC20Permit) returns (uint256) {
         return super.nonces(owner);
+    }
+
+    /// @inheritdoc ITokenIndex
+    function multicall(bytes[] calldata data) external override onlyIndexManager returns (bytes[] memory results) {
+        results = new bytes[](data.length);
+        for (uint256 i = 0; i < data.length; i++) {
+            (bool success, bytes memory result) = address(this).delegatecall(data[i]);
+            require(success, "Multicall: call failed");
+            results[i] = result;
+        }
+        return results;
     }
 }
