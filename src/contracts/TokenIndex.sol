@@ -74,7 +74,7 @@ contract TokenIndex is ERC20, ERC20Burnable, ERC20Permit, ITokenIndex {
     }
 
     /// @inheritdoc ITokenIndex
-    function getTokenProportions() external view returns (TokenInfo[] memory) {
+    function getTokenProportions() external view returns (ITokenIndex.TokenInfo[] memory) {
         return _tokens;
     }
 
@@ -84,7 +84,7 @@ contract TokenIndex is ERC20, ERC20Burnable, ERC20Permit, ITokenIndex {
     }
 
     /// @inheritdoc ITokenIndex
-    function tokens(uint256 index) external view returns (TokenInfo memory) {
+    function tokens(uint256 index) external view returns (ITokenIndex.TokenInfo memory) {
         return _tokens[index];
     }
 

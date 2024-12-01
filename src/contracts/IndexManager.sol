@@ -29,7 +29,9 @@ contract IndexManager is IIndexManager {
     IPriceOracleGetter public priceOracle;
     ISwapRouter public swapRouter;
     IERC20 public baseToken;
+    IACLManager public aclManager;
 
+    bytes32 public immutable INDEX_ADMIN_ROLE;
     uint256 public constant FEE_PERIOD = 30 days;
     uint256 public constant FEE_DENOMINATOR = 10000; // 10000 represents 100%
     uint256 public lastFeeWithdrawal;
@@ -42,7 +44,7 @@ contract IndexManager is IIndexManager {
 
     modifier onlyIndexAdmin() {
         require(
-            tokenIndex.hasRole(tokenIndex.INDEX_ADMIN_ROLE(), msg.sender), "Only index admins can call this function"
+            aclManager.hasRole(INDEX_ADMIN_ROLE, msg.sender), "Only index admins can call this function"
         );
         _;
     }
@@ -52,7 +54,8 @@ contract IndexManager is IIndexManager {
         address _priceOracle,
         address _swapRouter,
         address _baseToken,
-        uint256 _feePercentage
+        uint256 _feePercentage,
+        address _aclManager
     ) {
         tokenIndex = ITokenIndex(_tokenIndex);
         priceOracle = IPriceOracleGetter(_priceOracle);
@@ -60,10 +63,12 @@ contract IndexManager is IIndexManager {
         baseToken = IERC20(_baseToken);
         feePercentage = _feePercentage;
         lastFeeWithdrawal = block.timestamp;
+        aclManager = IACLManager(_aclManager);
+        INDEX_ADMIN_ROLE = tokenIndex.INDEX_ADMIN_ROLE();
     }
 
     function calculateRequiredSwaps(uint256 amount) public view returns (SwapInfo[] memory) {
-        TokenInfo[] memory tokenInfos = tokenIndex.getTokenProportions();
+        ITokenIndex.TokenInfo[] memory tokenInfos = tokenIndex.getTokenProportions();
         (uint256[] memory deficitTokenIds, int256[] memory deficitDeltas, uint256 totalDeficit) =
             findDeficitTokens(tokenInfos);
 
@@ -139,13 +144,13 @@ contract IndexManager is IIndexManager {
                 uint256 totalDistributedAmount = 0;
                 for (uint256 i = 0; i < tokenInfos.length - 1; i++) {
                     uint256 tokenPrice = priceOracle.getAssetPrice(address(tokenInfos[i].token));
-                    uint256 amount = totalUSD / tokenInfos.length / tokenPrice;
-                    totalDistributedAmount += amount;
+                    uint256 amountToSwap = totalUSD / tokenInfos.length / tokenPrice;
+                    totalDistributedAmount += amountToSwap;
 
                     swaps[i] = SwapInfo({
                         tokenIn: address(baseToken),
                         tokenOut: address(tokenInfos[i].token),
-                        amountIn: amount
+                        amountIn: amountToSwap
                     });
                 }
 
@@ -186,7 +191,7 @@ contract IndexManager is IIndexManager {
         uint256 timeSinceLastFee = block.timestamp - lastFeeWithdrawal;
         uint256 effectiveFeePercentage = (feePercentage * timeSinceLastFee) / FEE_PERIOD;
 
-        TokenInfo[] memory tokenInfos = tokenIndex.getTokenProportions();
+        ITokenIndex.TokenInfo[] memory tokenInfos = tokenIndex.getTokenProportions();
         for (uint256 i = 0; i < tokenInfos.length; i++) {
             uint256 tokenBalance = tokenInfos[i].token.balanceOf(address(tokenIndex));
             uint256 tokenAmount = userShare * tokenBalance / 1e18;
@@ -233,7 +238,7 @@ contract IndexManager is IIndexManager {
 
     function getCurrentIndexTokenPrice() internal view returns (uint256) {
         uint256 totalValue = 0;
-        TokenInfo[] memory tokenInfos = tokenIndex.getTokenProportions();
+        ITokenIndex.TokenInfo[] memory tokenInfos = tokenIndex.getTokenProportions();
         for (uint256 i = 0; i < tokenInfos.length; i++) {
             uint256 tokenPrice = priceOracle.getAssetPrice(address(tokenInfos[i].token));
             uint256 tokenBalance = tokenInfos[i].token.balanceOf(address(tokenIndex));
@@ -242,7 +247,7 @@ contract IndexManager is IIndexManager {
         return totalValue * 1e18 / tokenIndex.totalSupply();
     }
 
-    function findDeficitTokens(TokenInfo[] memory tokenInfos)
+    function findDeficitTokens(ITokenIndex.TokenInfo[] memory tokenInfos)
         internal
         view
         returns (uint256[] memory deficitTokenIds, int256[] memory deficitDeltas, uint256 totalDeficit)
@@ -276,7 +281,7 @@ contract IndexManager is IIndexManager {
         }
     }
 
-    function findSurplusTokens(TokenInfo[] memory tokenInfos)
+    function findSurplusTokens(ITokenIndex.TokenInfo[] memory tokenInfos)
         internal
         view
         returns (uint256[] memory surplusTokenIds, int256[] memory surplusDeltas, uint256 totalSurplus)
@@ -310,6 +315,26 @@ contract IndexManager is IIndexManager {
         }
     }
 
+    function getCurrentProportions(ITokenIndex.TokenInfo[] memory tokenInfos) internal view returns (uint256[] memory proportions) {
+        proportions = new uint256[](tokenInfos.length);
+        uint256 totalValue = 0;
+        uint256[] memory balances = new uint256[](tokenInfos.length);
+        uint256[] memory prices = new uint256[](tokenInfos.length);
+
+        // First calculate total value in USD of all tokens
+        for (uint256 i = 0; i < tokenInfos.length; i++) {
+            balances[i] = tokenInfos[i].token.balanceOf(address(tokenIndex));
+            prices[i] = priceOracle.getAssetPrice(address(tokenInfos[i].token));
+            totalValue += balances[i] * prices[i];
+        }
+
+        // Then calculate each token's proportion based on its USD value
+        for (uint256 i = 0; i < tokenInfos.length; i++) {
+            uint256 tokenValue = balances[i] * prices[i];
+            proportions[i] = totalValue > 0 ? (tokenValue * 1e18) / totalValue : 0;
+        }
+    }
+
     function swapTokens(address tokenIn, address tokenOut, uint256 amountIn) internal {
         bytes memory path = tokenPaths[tokenIn][tokenOut];
         require(path.length > 0, "Path not set for token pair");
@@ -337,7 +362,7 @@ contract IndexManager is IIndexManager {
 
         lastFeeWithdrawal += periodsElapsed * FEE_PERIOD;
 
-        TokenInfo[] memory tokenInfos = tokenIndex.getTokenProportions();
+        ITokenIndex.TokenInfo[] memory tokenInfos = tokenIndex.getTokenProportions();
         for (uint256 i = 0; i < tokenInfos.length; i++) {
             IERC20 token = tokenInfos[i].token;
             uint256 balance = token.balanceOf(address(tokenIndex));
@@ -347,7 +372,7 @@ contract IndexManager is IIndexManager {
     }
 
     function calculateRequiredSwapsForSurplusTokens(uint256 amount) internal view returns (SwapInfo[] memory) {
-        TokenInfo[] memory tokenInfos = tokenIndex.getTokenProportions();
+        ITokenIndex.TokenInfo[] memory tokenInfos = tokenIndex.getTokenProportions();
         (uint256[] memory surplusTokenIds, int256[] memory surplusDeltas, uint256 totalSurplus) =
             findSurplusTokens(tokenInfos);
 
@@ -424,13 +449,13 @@ contract IndexManager is IIndexManager {
                 uint256 totalDistributedAmount = 0;
                 for (uint256 i = 0; i < surplusTokenIds.length - 1; i++) {
                     uint256 tokenPrice = priceOracle.getAssetPrice(address(tokenInfos[surplusTokenIds[i]].token));
-                    uint256 amount = totalUSD / surplusTokenIds.length / tokenPrice;
-                    totalDistributedAmount += amount;
+                    uint256 amountToSwap = totalUSD / surplusTokenIds.length / tokenPrice;
+                    totalDistributedAmount += amountToSwap;
 
                     swaps[i] = SwapInfo({
                         tokenIn: address(tokenInfos[surplusTokenIds[i]].token),
                         tokenOut: address(baseToken),
-                        amountIn: amount
+                        amountIn: amountToSwap
                     });
                 }
 
