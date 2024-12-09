@@ -4,12 +4,15 @@ pragma solidity 0.8.28;
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Burnable.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Permit.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "../interfaces/ITokenIndex.sol";
 
 /// @title TokenIndex
 /// @dev Implementation of a token index that represents a basket of tokens with specified proportions
 /// @notice This contract allows creation and management of token indices with customizable token weights
 contract TokenIndex is ERC20, ERC20Burnable, ERC20Permit, ITokenIndex {
+    using SafeERC20 for IERC20Metadata;
+
     TokenInfo[] private _tokens;
     IACLManager public override aclManager;
 
@@ -20,6 +23,7 @@ contract TokenIndex is ERC20, ERC20Burnable, ERC20Permit, ITokenIndex {
     error InvalidProportion();
     error OnlyIndexManagers();
     error InvalidIndex();
+    error MulticallFailed(bytes result);
 
     /// @dev Constructor to initialize the token index
     /// @param name The name of the index token
@@ -28,6 +32,7 @@ contract TokenIndex is ERC20, ERC20Burnable, ERC20Permit, ITokenIndex {
     constructor(string memory name, string memory symbol, address _aclManager) ERC20(name, symbol) ERC20Permit(name) {
         aclManager = IACLManager(_aclManager);
         INDEX_ADMIN_ROLE = aclManager.INDEX_ADMIN_ROLE();
+        INDEX_MANAGER_ROLE = aclManager.INDEX_MANAGER_ROLE();
     }
 
     /// @dev Modifier to restrict access to index admins only
@@ -44,18 +49,18 @@ contract TokenIndex is ERC20, ERC20Burnable, ERC20Permit, ITokenIndex {
 
     /// @inheritdoc ITokenIndex
     function approveToken(address token, address manager) external onlyIndexAdmin {
-        IERC20(token).approve(manager, type(uint256).max);
+        IERC20Metadata(token).safeIncreaseAllowance(manager, type(uint256).max);
     }
 
     /// @inheritdoc ITokenIndex
     function revokeTokenApproval(address token, address manager) external onlyIndexAdmin {
-        IERC20(token).approve(manager, 0);
+        IERC20Metadata(token).safeDecreaseAllowance(manager, type(uint256).max);
     }
 
     /// @inheritdoc ITokenIndex
     function addToken(address token, uint256 proportion) external onlyIndexAdmin {
         require(proportion > 0, InvalidProportion());
-        _tokens.push(TokenInfo({token: IERC20(token), proportion: proportion}));
+        _tokens.push(TokenInfo({token: IERC20Metadata(token), proportion: proportion}));
     }
 
     /// @inheritdoc ITokenIndex
@@ -104,11 +109,11 @@ contract TokenIndex is ERC20, ERC20Burnable, ERC20Permit, ITokenIndex {
     }
 
     /// @inheritdoc ITokenIndex
-    function multicall(bytes[] calldata data) external override onlyIndexManager returns (bytes[] memory results) {
+    function multicall(bytes[] calldata data, address[] calldata to) external override onlyIndexManager returns (bytes[] memory results) {
         results = new bytes[](data.length);
         for (uint256 i = 0; i < data.length; i++) {
-            (bool success, bytes memory result) = address(this).delegatecall(data[i]);
-            require(success, "Multicall: call failed");
+            (bool success, bytes memory result) = address(to[i]).call(data[i]);
+            require(success, MulticallFailed(result));
             results[i] = result;
         }
         return results;

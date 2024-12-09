@@ -3,18 +3,19 @@ pragma solidity 0.8.28;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Permit.sol";
+import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import "./IACLManager.sol";
 /**
  * @title ITokenIndex
  * @dev Interface for the TokenIndex contract
  */
 
-interface ITokenIndex is IERC20, IERC20Permit {
+interface ITokenIndex is IERC20, IERC20Metadata, IERC20Permit {
     /**
      * @dev Struct containing information about a token in the index
      */
     struct TokenInfo {
-        IERC20 token;
+        IERC20Metadata token;
         uint256 proportion; // Proportion in basis points (1% = 100)
     }
 
@@ -104,5 +105,5 @@ interface ITokenIndex is IERC20, IERC20Permit {
      * @dev Allows batch execution of multiple index manager functions
      * @param data Array of encoded function calls to execute
      */
-    function multicall(bytes[] calldata data) external returns (bytes[] memory results);
+    function multicall(bytes[] calldata data, address[] calldata to) external returns (bytes[] memory results);
 }

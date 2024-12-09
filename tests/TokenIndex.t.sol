@@ -21,6 +21,7 @@ contract TokenIndexTest is Test {
     MockToken public token2;
     address public admin = address(1);
     address public user = address(2);
+    address public manager = address(3);
 
     function setUp() public {
         // Deploy contracts
@@ -32,6 +33,7 @@ contract TokenIndexTest is Test {
         // Setup roles
         vm.startPrank(address(this));
         aclManager.addIndexAdmin(admin);
+        aclManager.addIndexManager(manager);
         vm.stopPrank();
     }
 
@@ -77,7 +79,7 @@ contract TokenIndexTest is Test {
     }
 
     function testMintAndBurn() public {
-        vm.startPrank(admin);
+        vm.startPrank(manager);
         tokenIndex.mint(user, 1000);
         assertEq(tokenIndex.balanceOf(user), 1000);
 
