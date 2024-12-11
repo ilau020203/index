@@ -109,13 +109,17 @@ contract TokenIndex is ERC20, ERC20Burnable, ERC20Permit, ITokenIndex {
     }
 
     /// @inheritdoc ITokenIndex
-    function multicall(bytes[] calldata data, address[] calldata to) external override onlyIndexManager returns (bytes[] memory results) {
+    function multicall(bytes[] calldata data, address[] calldata to)
+        external
+        override
+        onlyIndexManager
+        returns (bytes[] memory results)
+    {
         results = new bytes[](data.length);
         for (uint256 i = 0; i < data.length; i++) {
             (bool success, bytes memory result) = address(to[i]).call(data[i]);
             require(success, MulticallFailed(result));
             results[i] = result;
         }
-        return results;
     }
 }

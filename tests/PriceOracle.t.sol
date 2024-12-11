@@ -13,8 +13,10 @@ contract PriceOracleTest is Test {
     ACLManager public aclManager;
     AggregatorV3Mock public aggregatorMock;
     AggregatorV3Mock public fallbackAggregatorMock;
+    AggregatorV3Mock public badAggregatorMock;
     address public constant ASSET = address(0x1);
     int256 public constant INITIAL_PRICE = 100;
+    int256 public constant BAD_PRICE = 0;
     int256 public constant FALLBACK_PRICE = 150;
 
     function setUp() public {
@@ -22,6 +24,7 @@ contract PriceOracleTest is Test {
         priceOracle = new PriceOracle(address(aclManager));
         fallbackOracle = new PriceOracle(address(aclManager));
         aggregatorMock = new AggregatorV3Mock(INITIAL_PRICE);
+        badAggregatorMock = new AggregatorV3Mock(BAD_PRICE);
         fallbackAggregatorMock = new AggregatorV3Mock(FALLBACK_PRICE);
 
         aclManager.addIndexAdmin(address(this));
@@ -137,5 +140,25 @@ contract PriceOracleTest is Test {
         uint256[] memory prices = priceOracle.getAssetsPrices(assets);
         assertEq(prices.length, 1);
         assertEq(prices[0], uint256(FALLBACK_PRICE));
+    }
+
+    function testGetAssetPriceFromFallbackWithBadPrice() public {
+        // Set up main oracle with bad price source
+        address[] memory assets = new address[](1);
+        assets[0] = ASSET;
+        address[] memory sources = new address[](1);
+        sources[0] = address(badAggregatorMock);
+        priceOracle.setAssetSources(assets, sources);
+
+        // Set up fallback oracle with good price source
+        sources[0] = address(fallbackAggregatorMock);
+        fallbackOracle.setAssetSources(assets, sources);
+
+        // Set fallback oracle
+        priceOracle.setFallbackOracle(address(fallbackOracle));
+
+        // Should get price from fallback since main oracle has bad price
+        uint256 price = priceOracle.getAssetPrice(ASSET);
+        assertEq(price, uint256(FALLBACK_PRICE));
     }
 }

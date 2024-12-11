@@ -76,4 +76,23 @@ contract ACLManagerTest is Test {
 
         assertFalse(aclManager.hasRole(aclManager.INDEX_ADMIN_ROLE(), user));
     }
+
+    function testRemoveIndexManagerRevertWhenCalledByNonAdmin() public {
+        vm.prank(admin);
+        aclManager.addIndexManager(user);
+
+        vm.prank(user);
+        vm.expectRevert();
+        aclManager.removeIndexManager(user);
+    }
+
+    function testRemoveIndexManagerSuccessWhenCalledByAdmin() public {
+        vm.prank(admin);
+        aclManager.addIndexManager(user);
+
+        vm.prank(admin);
+        aclManager.removeIndexManager(user);
+
+        assertFalse(aclManager.hasRole(aclManager.INDEX_MANAGER_ROLE(), user));
+    }
 }

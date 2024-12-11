@@ -227,6 +227,11 @@ contract IndexManagerTest is Test {
 
         uint256 balanceAfter = IERC20(USDT).balanceOf(address(this));
         assertEq(balanceAfter, balanceBefore - amount - amount2, "USDT not transferred");
+        assertEq(IERC20(USDT).balanceOf(address(indexManager)), 0, "USDT balance should be 0");
+        assertEq(IERC20(DAI).balanceOf(address(indexManager)), 0, "DAI balance should be 0");
+        assertEq(IERC20(WBTC).balanceOf(address(indexManager)), 0, "WBTC balance should be 0");
+        assertEq(IERC20(USDC).balanceOf(address(indexManager)), 0, "USDC balance should be 0");
+        assertEq(IERC20(GRT).balanceOf(address(indexManager)), 0, "GRT balance should be 0");
         assertTrue(IERC20(USDT).balanceOf(address(tokenIndex)) > 0, "USDT balance should be greater than 0");
         assertTrue(IERC20(DAI).balanceOf(address(tokenIndex)) > 0, "DAI balance should be greater than 0");
         assertTrue(IERC20(WBTC).balanceOf(address(tokenIndex)) > 0, "WBTC balance should be greater than 0");
@@ -256,78 +261,154 @@ contract IndexManagerTest is Test {
         assertTrue(tokenIndex.balanceOf(address(this)) > 0, "No index tokens minted");
     }
 
+    function testDepositDoubleInDifferentTimeWithSmallAmount() public {
+        uint256 amount = 1000 * 1e6; // 1000 USDT
+        uint256 amount2 = 1000000; // 1000 USDT
+        uint256 balanceBefore = IERC20(USDT).balanceOf(address(this));
+
+        indexManager.deposit(amount, address(this));
+
+        vm.rollFork(block.number + 1000);
+
+        indexManager.deposit(amount2, address(this));
+
+        uint256 balanceAfter = IERC20(USDT).balanceOf(address(this));
+        assertEq(balanceAfter, balanceBefore - amount - amount2, "USDT not transferred");
+        assertTrue(IERC20(USDT).balanceOf(address(tokenIndex)) > 0, "USDT balance should be greater than 0");
+        assertTrue(IERC20(DAI).balanceOf(address(tokenIndex)) > 0, "DAI balance should be greater than 0");
+        assertTrue(IERC20(WBTC).balanceOf(address(tokenIndex)) > 0, "WBTC balance should be greater than 0");
+        assertTrue(IERC20(USDC).balanceOf(address(tokenIndex)) > 0, "USDC balance should be greater than 0");
+        assertTrue(IERC20(GRT).balanceOf(address(tokenIndex)) > 0, "GRT balance should be greater than 0");
+        assertTrue(tokenIndex.balanceOf(address(this)) > 0, "No index tokens minted");
+    }
+
     function testWithdraw() public {
         // First deposit
         uint256 depositAmount = 1000 * 1e6; // 1000 USDT
         indexManager.deposit(depositAmount, address(this));
 
         uint256 indexTokens = tokenIndex.balanceOf(address(this));
-
+        address recipient = address(0xfffffffffffffff);
         // Then withdraw
-        uint256[] memory balancesBefore = new uint256[](5);
-        balancesBefore[0] = IERC20(USDT).balanceOf(address(this));
-        balancesBefore[1] = IERC20(WBTC).balanceOf(address(this));
-        balancesBefore[2] = IERC20(USDC).balanceOf(address(this));
-        balancesBefore[3] = IERC20(DAI).balanceOf(address(this));
-        balancesBefore[4] = IERC20(GRT).balanceOf(address(this));
-        vm.breakpoint("a");
+        uint256 usdtBalanceBefore = IERC20(USDT).balanceOf(recipient);
 
-        indexManager.withdraw(indexTokens, address(this));
+        indexManager.withdraw(indexTokens, recipient);
 
-        uint256[] memory balancesAfter = new uint256[](5);
-        balancesAfter[0] = IERC20(USDT).balanceOf(address(this));
-        balancesAfter[1] = IERC20(WBTC).balanceOf(address(this));
-        balancesAfter[2] = IERC20(USDC).balanceOf(address(this));
-        balancesAfter[3] = IERC20(DAI).balanceOf(address(this));
-        balancesAfter[4] = IERC20(GRT).balanceOf(address(this));
+        uint256 usdtBalanceAfter = IERC20(USDT).balanceOf(recipient);
+        assertTrue(usdtBalanceAfter > usdtBalanceBefore, "No USDT received");
 
-        assertTrue(balancesAfter[0] > balancesBefore[0], "No USDT received");
-        assertTrue(balancesAfter[1] > balancesBefore[1], "No WBTC received");
-        assertTrue(balancesAfter[2] > balancesBefore[2], "No USDC received");
-        assertTrue(balancesAfter[3] > balancesBefore[3], "No DAI received");
-        assertTrue(balancesAfter[4] > balancesBefore[4], "No GRT received");
+        // Check all token balances in index are now 0
+        assertEq(IERC20(USDT).balanceOf(address(tokenIndex)), 0, "USDT balance not 0");
+        assertEq(IERC20(WBTC).balanceOf(address(tokenIndex)), 0, "WBTC balance not 0");
+        assertEq(IERC20(USDC).balanceOf(address(tokenIndex)), 0, "USDC balance not 0");
+        assertEq(IERC20(DAI).balanceOf(address(tokenIndex)), 0, "DAI balance not 0");
+        assertEq(IERC20(GRT).balanceOf(address(tokenIndex)), 0, "GRT balance not 0");
         assertEq(tokenIndex.balanceOf(address(this)), 0, "Index tokens not burned");
     }
 
-    // function testWithdrawFees() public {
-    //     // Deposit and wait for fee period
-    //     uint256 depositAmount = 1000 * 1e6; // 1000 USDT
-    //     indexManager.deposit(depositAmount, address(this));
+    function testWithdrawDouble() public {
+        // First deposit
+        uint256 depositAmount = 1000 * 1e6; // 1000 USDT
+        indexManager.deposit(depositAmount, address(this));
 
-    //     // Fast forward 30 days
-    //     vm.warp(block.timestamp + 30 days);
+        uint256 indexTokens = tokenIndex.balanceOf(address(this));
+        address recipient = address(0xfffffffffffffff);
+        // Then withdraw
+        uint256 usdtBalanceBefore = IERC20(USDT).balanceOf(recipient);
+        console.log("indexTokens", indexTokens);
 
-    //     uint256 balanceBefore = IERC20(USDT).balanceOf(address(this));
-    //     indexManager.withdrawFees();
-    //     uint256 balanceAfter = IERC20(USDT).balanceOf(address(this));
+        indexManager.withdraw(indexTokens - 1e19, recipient);
 
-    //     assertTrue(balanceAfter > balanceBefore, "No fees withdrawn");
-    // }
+        vm.rollFork(block.number + 1000);
+        indexTokens = tokenIndex.balanceOf(address(this));
 
-    // function testRebalance() public {
-    //     // First deposit to have tokens in the index
-    //     uint256 depositAmount = 1000 * 1e6; // 1000 USDT
-    //     indexManager.deposit(depositAmount, address(this));
+        indexManager.withdraw(indexTokens, recipient);
 
-    //     // Create swap parameters for rebalancing
-    //     IIndexManager.SwapParams[] memory params = new IIndexManager.SwapParams[](1);
+        uint256 usdtBalanceAfter = IERC20(USDT).balanceOf(recipient);
+        assertTrue(usdtBalanceAfter > usdtBalanceBefore, "No USDT received");
 
-    //     // Example swap USDT -> DAI
-    //     bytes memory path = abi.encodePacked(
-    //         USDT,
-    //         uint24(3000),
-    //         0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2, // WETH
-    //         uint24(3000),
-    //         DAI
-    //     );
-    //     params[0] = IIndexManager.SwapParams({
-    //         path: path,
-    //         amountIn: 100 * 1e6, // 100 USDT
-    //         amountOutMinimum: 90 * 1e18, // 90 DAI minimum
-    //         deadline: block.timestamp + 1 hours
-    //     });
+        // Check all token balances in index are now 0
+        assertEq(IERC20(USDT).balanceOf(address(tokenIndex)), 0, "USDT balance not 0");
+        assertEq(IERC20(WBTC).balanceOf(address(tokenIndex)), 0, "WBTC balance not 0");
+        assertEq(IERC20(USDC).balanceOf(address(tokenIndex)), 0, "USDC balance not 0");
+        assertEq(IERC20(DAI).balanceOf(address(tokenIndex)), 0, "DAI balance not 0");
+        assertEq(IERC20(GRT).balanceOf(address(tokenIndex)), 0, "GRT balance not 0");
+        assertEq(tokenIndex.balanceOf(address(this)), 0, "Index tokens not burned");
+    }
 
-    //     vm.prank(admin);
-    //     indexManager.rebalance(params);
-    // }
+    function testWithdrawFees() public {
+        // Deposit and wait for fee period
+        uint256 depositAmount = 1000 * 1e6; // 1000 USDT
+        indexManager.deposit(depositAmount, address(this));
+
+        // Fast forward 30 days
+        vm.warp(block.timestamp + 30 days);
+
+        uint256 balanceBefore = IERC20(USDT).balanceOf(address(this));
+        indexManager.withdrawFees();
+        uint256 balanceAfter = IERC20(USDT).balanceOf(address(this));
+
+        assertTrue(balanceAfter > balanceBefore, "No fees withdrawn");
+    }
+
+    function testRebalance() public {
+        // First deposit to have tokens in the index
+        uint256 depositAmount = 1000 * 1e6; // 1000 USDT
+        indexManager.deposit(depositAmount, address(this));
+
+        // Create swap parameters for rebalancing
+        IIndexManager.SwapParams[] memory params = new IIndexManager.SwapParams[](1);
+
+        // Example swap USDT -> DAI
+        bytes memory path = abi.encodePacked(
+            USDT,
+            uint24(3000),
+            0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2, // WETH
+            uint24(3000),
+            DAI
+        );
+        params[0] = IIndexManager.SwapParams({
+            path: path,
+            amountIn: 100 * 1e6, // 100 USDT
+            amountOutMinimum: 90 * 1e18, // 90 DAI minimum
+            deadline: block.timestamp + 1 hours
+        });
+        uint256 usdtBalanceBefore = IERC20(USDT).balanceOf(address(tokenIndex));
+        uint256 daiBalanceBefore = IERC20(DAI).balanceOf(address(tokenIndex));
+
+        vm.prank(admin);
+        indexManager.rebalance(params);
+
+        uint256 usdtBalanceAfter = IERC20(USDT).balanceOf(address(tokenIndex));
+        uint256 daiBalanceAfter = IERC20(DAI).balanceOf(address(tokenIndex));
+
+        assertEq(usdtBalanceBefore - usdtBalanceAfter, 100 * 1e6, "USDT balance did not decrease by expected amount");
+        assertTrue(daiBalanceAfter - daiBalanceBefore >= 90 * 1e18, "DAI balance did not increase by expected amount");
+    }
+
+    function testRevokeTokenApproval() public {
+        // First approve a token to a manager
+        address manager = address(0x123);
+        vm.startPrank(admin);
+        indexManager.approveToken(USDT, manager);
+
+        // Verify initial approval
+        uint256 initialAllowance = IERC20(USDT).allowance(address(indexManager), manager);
+        assertEq(initialAllowance, type(uint256).max);
+
+        // Revoke approval
+        indexManager.revokeTokenApproval(USDT, manager);
+
+        // Verify approval was revoked
+        uint256 finalAllowance = IERC20(USDT).allowance(address(indexManager), manager);
+        assertEq(finalAllowance, 0);
+        vm.stopPrank();
+    }
+
+    function testRevokeTokenApprovalRevertsForNonAdmin() public {
+        address badManager = address(0x1223);
+        vm.startPrank(badManager);
+        vm.expectRevert(IIndexManager.OnlyIndexAdmins.selector);
+        indexManager.revokeTokenApproval(USDT, badManager);
+    }
 }

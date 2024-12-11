@@ -6,7 +6,6 @@ import "../interfaces/ITokenIndex.sol";
 import "../interfaces/IPriceOracleGetter.sol";
 
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-
 import "forge-std/console.sol";
 
 contract IndexManager is IIndexManager {
@@ -20,6 +19,7 @@ contract IndexManager is IIndexManager {
 
     bytes32 public immutable override INDEX_ADMIN_ROLE;
     uint256 public immutable override TOKEN_INDEX_DECIMALS;
+    uint256 public immutable BASE_TOKEN_DECIMALS;
     uint256 public constant override FEE_PERIOD = 30 days;
     uint256 public constant override PRICE_ORACLE_DECIMALS = 1e8;
     uint256 private constant PROPORTION_DECIMALS = 1e18;
@@ -50,16 +50,15 @@ contract IndexManager is IIndexManager {
         lastFeeWithdrawal = block.timestamp;
         aclManager = IACLManager(_aclManager);
         INDEX_ADMIN_ROLE = tokenIndex.INDEX_ADMIN_ROLE();
-        TOKEN_INDEX_DECIMALS = tokenIndex.decimals();
+        TOKEN_INDEX_DECIMALS = 10 ** tokenIndex.decimals();
+        BASE_TOKEN_DECIMALS = 10 ** baseToken.decimals();
     }
 
     /// @inheritdoc IIndexManager
     function deposit(uint256 amount, address to) external override {
         baseToken.safeTransferFrom(msg.sender, address(this), amount);
-        uint256 totalUSD = amount * priceOracle.getAssetPrice(address(baseToken));
-        uint256 timeSinceLastFee = block.timestamp - lastFeeWithdrawal;
-        uint256 effectiveFeePercentage = (feePercentage * timeSinceLastFee) / FEE_PERIOD;
-        uint256 effectiveTotalUSD = (totalUSD * (FEE_DENOMINATOR - effectiveFeePercentage)) / FEE_DENOMINATOR;
+        uint256 totalUSD = (amount * priceOracle.getAssetPrice(address(baseToken)) * TOKEN_INDEX_DECIMALS)
+            / BASE_TOKEN_DECIMALS / PRICE_ORACLE_DECIMALS;
 
         SwapInfo[] memory swaps = calculateRequiredSwaps(amount);
 
@@ -71,7 +70,7 @@ contract IndexManager is IIndexManager {
             swapTokens(swaps[i].tokenIn, swaps[i].tokenOut, swaps[i].amountIn, address(tokenIndex));
         }
 
-        uint256 indexTokenAmount = calculateMintAmount(effectiveTotalUSD);
+        uint256 indexTokenAmount = calculateMintAmount(totalUSD);
         tokenIndex.mint(to, indexTokenAmount);
 
         emit Deposit(msg.sender, amount, to);
@@ -83,7 +82,13 @@ contract IndexManager is IIndexManager {
         tokenIndex.burn(msg.sender, indexTokenAmount);
 
         SwapInfo[] memory swaps = calculateRequiredSwapsForSurplusTokens(userShare);
-
+        console.log("Swaps:");
+        for (uint256 i = 0; i < swaps.length; i++) {
+            console.log("Swap index:", i);
+            console.log("Token in:", swaps[i].tokenIn);
+            console.log("Token out:", swaps[i].tokenOut);
+            console.log("Amount in:", swaps[i].amountIn);
+        }
         bytes[] memory calls = new bytes[](swaps.length);
         address[] memory targets = new address[](swaps.length);
         for (uint256 i = 0; i < swaps.length; i++) {
@@ -93,7 +98,6 @@ contract IndexManager is IIndexManager {
                 continue;
             }
             bytes memory path = tokenPaths[swaps[i].tokenIn][swaps[i].tokenOut];
-    
 
             require(path.length > 0, PathNotSet());
             ISwapRouter.ExactInputParams memory params = ISwapRouter.ExactInputParams({
@@ -109,32 +113,27 @@ contract IndexManager is IIndexManager {
             targets[i] = address(swapRouter);
         }
 
-
         // Execute all swaps through multicall
         tokenIndex.multicall(calls, targets);
-        console.log(IERC20(0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599).balanceOf(to), "balance of token");
 
         emit Withdraw(msg.sender, indexTokenAmount, to);
     }
 
     /// @inheritdoc IIndexManager
     function withdrawFees() external override {
-        uint256 periodsElapsed = (block.timestamp - lastFeeWithdrawal) / FEE_PERIOD;
-        if (periodsElapsed == 0) {
-            revert FeeWithdrawalTooSoon();
-        }
+        require(block.timestamp >= lastFeeWithdrawal + FEE_PERIOD, FeeWithdrawalTooSoon());
 
-        lastFeeWithdrawal += periodsElapsed * FEE_PERIOD;
+        lastFeeWithdrawal = block.timestamp;
 
         ITokenIndex.TokenInfo[] memory tokenInfos = tokenIndex.getTokenProportions();
         for (uint256 i = 0; i < tokenInfos.length; i++) {
             IERC20Metadata token = tokenInfos[i].token;
             uint256 balance = token.balanceOf(address(tokenIndex));
-            uint256 feeAmount = (balance * feePercentage * periodsElapsed) / FEE_DENOMINATOR;
-            token.safeTransfer(msg.sender, feeAmount);
+            uint256 feeAmount = (balance * feePercentage) / FEE_DENOMINATOR;
+            token.safeTransferFrom(address(tokenIndex), msg.sender, feeAmount);
         }
 
-        emit FeeWithdrawn(msg.sender, periodsElapsed);
+        emit FeeWithdrawn(msg.sender);
     }
 
     /// @inheritdoc IIndexManager
@@ -187,15 +186,6 @@ contract IndexManager is IIndexManager {
         }
     }
 
-    function calculateBurnAmount(uint256 indexTokenAmount) internal view returns (uint256) {
-        if (tokenIndex.totalSupply() == 0) {
-            return 0;
-        } else {
-            uint256 currentIndexTokenPrice = getCurrentIndexTokenPrice();
-            return (indexTokenAmount * currentIndexTokenPrice) / 1e18;
-        }
-    }
-
     function getCurrentIndexTokenPrice() internal view returns (uint256) {
         uint256 totalValue = 0;
         ITokenIndex.TokenInfo[] memory tokenInfos = tokenIndex.getTokenProportions();
@@ -210,7 +200,7 @@ contract IndexManager is IIndexManager {
     function findDeficitTokens(ITokenIndex.TokenInfo[] memory tokenInfos)
         internal
         view
-        returns (uint256[] memory deficitTokenIds, int256[] memory deficitDeltas, uint256 totalDeficit)
+        returns (uint256[] memory deficitTokenIds, uint256[] memory deficitDeltas, uint256 totalDeficit)
     {
         uint256[] memory currentProportions = getCurrentProportions(tokenInfos);
 
@@ -225,21 +215,27 @@ contract IndexManager is IIndexManager {
         }
 
         deficitTokenIds = new uint256[](deficitCount);
-        deficitDeltas = new int256[](deficitCount);
+        deficitDeltas = new uint256[](deficitCount);
 
         uint256 deficitIndex = 0;
 
-        // Fill deficit arrays and calculate total deficit
+        // Calculate total value in USD of all tokens
+        uint256 totalValue = 0;
+        for (uint256 i = 0; i < tokenInfos.length; i++) {
+            uint256 balance = tokenInfos[i].token.balanceOf(address(tokenIndex));
+            uint256 price = priceOracle.getAssetPrice(address(tokenInfos[i].token));
+            uint256 decimals = tokenInfos[i].token.decimals();
+            totalValue += (balance * price * TOKEN_INDEX_DECIMALS) / 10 ** decimals / PRICE_ORACLE_DECIMALS;
+        }
+
+        // Fill deficit arrays and calculate total deficit in USD
         for (uint256 i = 0; i < currentProportions.length; i++) {
-            int256 delta = int256(currentProportions[i]) - int256(tokenInfos[i].proportion);
-            // console.log(delta, "delta");
-            console.log(currentProportions[i], "currentProportions[i]");
-            console.log(tokenInfos[i].proportion, "tokenInfos[i].proportion");
-            if (delta < 0) {
+            if (currentProportions[i] < tokenInfos[i].proportion) {
                 deficitTokenIds[deficitIndex] = i;
+                // Convert proportion delta to USD value
+                uint256 delta = ((tokenInfos[i].proportion - currentProportions[i]) * totalValue) / PROPORTION_DECIMALS;
                 deficitDeltas[deficitIndex] = delta;
-                console.log(uint256(-delta), "uint256(-delta)");
-                totalDeficit += uint256(-delta);
+                totalDeficit += delta;
                 deficitIndex++;
             }
         }
@@ -248,7 +244,12 @@ contract IndexManager is IIndexManager {
     function findSurplusTokens(ITokenIndex.TokenInfo[] memory tokenInfos)
         internal
         view
-        returns (uint256[] memory surplusTokenIds, int256[] memory surplusDeltas, uint256 totalSurplus)
+        returns (
+            uint256[] memory surplusTokenIds,
+            uint256[] memory surplusDeltas,
+            uint256 totalSurplus,
+            uint256 totalValue
+        )
     {
         uint256[] memory currentProportions = getCurrentProportions(tokenInfos);
 
@@ -263,17 +264,27 @@ contract IndexManager is IIndexManager {
         }
 
         surplusTokenIds = new uint256[](surplusCount);
-        surplusDeltas = new int256[](surplusCount);
+        surplusDeltas = new uint256[](surplusCount);
 
         uint256 surplusIndex = 0;
 
-        // Fill surplus arrays and calculate total surplus
+        // Calculate total value in USD of all tokens
+        totalValue = 0;
+        for (uint256 i = 0; i < tokenInfos.length; i++) {
+            uint256 balance = tokenInfos[i].token.balanceOf(address(tokenIndex));
+            uint256 price = priceOracle.getAssetPrice(address(tokenInfos[i].token));
+            uint256 decimals = tokenInfos[i].token.decimals();
+            totalValue += (balance * price * TOKEN_INDEX_DECIMALS) / 10 ** decimals / PRICE_ORACLE_DECIMALS;
+        }
+
+        // Fill surplus arrays and calculate total surplus in USD
         for (uint256 i = 0; i < currentProportions.length; i++) {
-            int256 delta = int256(currentProportions[i]) - int256(tokenInfos[i].proportion);
-            if (delta > 0) {
+            if (currentProportions[i] > tokenInfos[i].proportion) {
                 surplusTokenIds[surplusIndex] = i;
+                // Convert proportion delta to USD value
+                uint256 delta = ((currentProportions[i] - tokenInfos[i].proportion) * totalValue) / PROPORTION_DECIMALS;
                 surplusDeltas[surplusIndex] = delta;
-                totalSurplus += uint256(delta);
+                totalSurplus += delta;
                 surplusIndex++;
             }
         }
@@ -338,22 +349,13 @@ contract IndexManager is IIndexManager {
             }
             return swaps;
         }
-        (uint256[] memory surplusTokenIds, int256[] memory surplusDeltas, uint256 totalSurplus) =
-            findSurplusTokens(tokenInfos);
-        console.log(totalSurplus, "totalSurplus");
-
-        uint256 totalIndexUsd = 0;
-        for (uint256 i = 0; i < tokenInfos.length; i++) {
-            totalIndexUsd += (
-                tokenInfos[i].token.balanceOf(address(tokenIndex))
-                    * priceOracle.getAssetPrice(address(tokenInfos[i].token))
-            ) / 10 ** tokenInfos[i].token.decimals();
-        }
+        (uint256[] memory surplusTokenIds, uint256[] memory surplusDeltas, uint256 totalSurplus, uint256 totalIndexUsd)
+        = findSurplusTokens(tokenInfos);
 
         // Calculate total USD value of base token amount
         uint256 totalUSD = (userShare * totalIndexUsd) / tokenIndex.totalSupply();
 
-        if (totalSurplus < totalUSD) {
+        if (totalSurplus >= totalUSD) {
             uint256 swapCount = 0;
             // If total surplus is less than total USD, swap all surplus tokens
             swaps = new SwapInfo[](surplusTokenIds.length);
@@ -361,8 +363,11 @@ contract IndexManager is IIndexManager {
 
             for (uint256 i = 0; i < surplusTokenIds.length - 1; i++) {
                 uint256 requiredUSD = uint256(surplusDeltas[i]);
+                console.log("requiredUSD:", requiredUSD);
                 uint256 tokenPrice = priceOracle.getAssetPrice(address(tokenInfos[surplusTokenIds[i]].token));
+                console.log("tokenPrice:", tokenPrice);
                 uint256 amount = (requiredUSD * (10 ** tokenInfos[surplusTokenIds[i]].token.decimals())) / tokenPrice;
+                console.log("amount:", amount);
 
                 if (totalRequiredUsd + requiredUSD > totalUSD) {
                     break;
@@ -398,21 +403,25 @@ contract IndexManager is IIndexManager {
             return finalSwaps;
         } else {
             // First try to cover imbalances
+            console.log("3");
             swaps = new SwapInfo[](tokenInfos.length);
+
             for (uint256 i = 0; i < surplusTokenIds.length; i++) {
                 if (surplusDeltas[i] > 0) {
-                uint256 requiredUSD = uint256(surplusDeltas[i]);
-                uint256 tokenPrice = priceOracle.getAssetPrice(address(tokenInfos[surplusTokenIds[i]].token));
-                uint256 amount = (requiredUSD * (10 ** tokenInfos[surplusTokenIds[i]].token.decimals())) / tokenPrice;
+                    uint256 requiredUSD = uint256(surplusDeltas[i]);
+                    console.log("requiredUSD:", requiredUSD);
+                    uint256 tokenPrice = priceOracle.getAssetPrice(address(tokenInfos[surplusTokenIds[i]].token));
+                    console.log("tokenPrice:", tokenPrice);
+                    uint256 amount = (requiredUSD * (10 ** tokenInfos[surplusTokenIds[i]].token.decimals()))
+                        * PRICE_ORACLE_DECIMALS / tokenPrice;
+                    console.log("amount:", amount);
 
-                    if (totalUSD >= requiredUSD) {
-                        swaps[surplusTokenIds[i]] = SwapInfo({
-                            tokenIn: address(tokenInfos[surplusTokenIds[i]].token),
-                            tokenOut: address(baseToken),
-                            amountIn: amount
-                        });
-                        totalUSD -= requiredUSD;
-                    }
+                    swaps[surplusTokenIds[i]] = SwapInfo({
+                        tokenIn: address(tokenInfos[surplusTokenIds[i]].token),
+                        tokenOut: address(baseToken),
+                        amountIn: amount
+                    });
+                    totalUSD -= requiredUSD;
                 }
             }
 
@@ -420,26 +429,28 @@ contract IndexManager is IIndexManager {
             if (totalUSD > 0 && surplusTokenIds.length > 0) {
                 uint256 totalDistributedAmount = 0;
                 for (uint256 i = 0; i < tokenInfos.length - 1; i++) {
-                    uint256 tokenPrice = priceOracle.getAssetPrice(address(tokenInfos[surplusTokenIds[i]].token));
+                    uint256 tokenPrice = priceOracle.getAssetPrice(address(tokenInfos[i].token));
                     uint256 amountToSwap = totalUSD / surplusTokenIds.length / tokenPrice;
                     totalDistributedAmount += amountToSwap;
 
                     swaps[i] = SwapInfo({
-                        tokenIn: address(tokenInfos[surplusTokenIds[i]].token),
+                        tokenIn: address(tokenInfos[i].token),
                         tokenOut: address(baseToken),
-                        amountIn: amountToSwap
+                        amountIn: swaps[i].amountIn + amountToSwap
                     });
                 }
-
                 // Handle the last token separately with the remaining amount
-                uint256 lastIndex = surplusTokenIds.length - 1;
+                uint256 lastIndex = tokenInfos.length - 1;
                 uint256 remainingAmount = totalUSD - totalDistributedAmount;
                 swaps[lastIndex] = SwapInfo({
-                    tokenIn: address(tokenInfos[surplusTokenIds[lastIndex]].token),
+                    tokenIn: address(tokenInfos[lastIndex].token),
                     tokenOut: address(baseToken),
-                    amountIn: remainingAmount
+                    amountIn: swaps[lastIndex].amountIn + remainingAmount
                 });
             }
+
+            console.log("32");
+
             return swaps;
         }
     }
@@ -474,22 +485,24 @@ contract IndexManager is IIndexManager {
             });
             return swaps;
         }
-        (uint256[] memory deficitTokenIds, int256[] memory deficitDeltas, uint256 totalDeficit) =
+        (uint256[] memory deficitTokenIds, uint256[] memory deficitDeltas, uint256 totalDeficit) =
             findDeficitTokens(tokenInfos);
 
         // Calculate total USD value of base token amount
-        uint256 totalUSD = amount * priceOracle.getAssetPrice(address(baseToken));
+        uint256 baseTokenPrice = priceOracle.getAssetPrice(address(baseToken));
+        uint256 totalUSD =
+            (amount * baseTokenPrice * TOKEN_INDEX_DECIMALS) / BASE_TOKEN_DECIMALS / PRICE_ORACLE_DECIMALS;
 
-        if (totalDeficit < totalUSD) {
+        if (totalDeficit >= totalUSD) {
             uint256 swapCount = 0;
             // If total deficit is less than total USD, swap for all deficit tokens
             swaps = new SwapInfo[](deficitTokenIds.length);
             uint256 totalRequiredAmount = 0;
 
             for (uint256 i = 0; i < deficitTokenIds.length - 1; i++) {
-                uint256 requiredUSD = (uint256(-deficitDeltas[i]) * totalUSD) / PROPORTION_DECIMALS;
-                uint256 tokenPrice = priceOracle.getAssetPrice(address(tokenInfos[deficitTokenIds[i]].token));
-                uint256 requiredAmount = requiredUSD / tokenPrice;
+                uint256 requiredUSD = deficitDeltas[i];
+                uint256 requiredAmount =
+                    requiredUSD * BASE_TOKEN_DECIMALS * PRICE_ORACLE_DECIMALS / baseTokenPrice / TOKEN_INDEX_DECIMALS;
 
                 if (totalRequiredAmount + requiredAmount > amount) {
                     break;
@@ -524,46 +537,41 @@ contract IndexManager is IIndexManager {
             return finalSwaps;
         } else {
             // First try to cover imbalances
+            uint256 totalRequiredAmount = 0;
             swaps = new SwapInfo[](tokenInfos.length);
             for (uint256 i = 0; i < deficitTokenIds.length; i++) {
-                if (deficitDeltas[i] < 0) {
-                    uint256 requiredUSD = (uint256(-deficitDeltas[i]) * totalUSD) / PROPORTION_DECIMALS;
-                    uint256 tokenPrice = priceOracle.getAssetPrice(address(tokenInfos[deficitTokenIds[i]].token));
-                    uint256 requiredAmount = requiredUSD / tokenPrice;
-
-                    if (totalUSD >= requiredUSD) {
-                        swaps[deficitTokenIds[i]] = SwapInfo({
-                            tokenIn: address(baseToken),
-                            tokenOut: address(tokenInfos[deficitTokenIds[i]].token),
-                            amountIn: requiredAmount
-                        });
-                        totalUSD -= requiredUSD;
-                    }
-                }
+                uint256 requiredUSD = deficitDeltas[i];
+                uint256 requiredAmount =
+                    requiredUSD * BASE_TOKEN_DECIMALS * PRICE_ORACLE_DECIMALS / baseTokenPrice / TOKEN_INDEX_DECIMALS;
+                swaps[deficitTokenIds[i]] = SwapInfo({
+                    tokenIn: address(baseToken),
+                    tokenOut: address(tokenInfos[deficitTokenIds[i]].token),
+                    amountIn: requiredAmount
+                });
+                totalUSD -= requiredUSD;
+                totalRequiredAmount += requiredAmount;
             }
 
             // If there's remaining amount, distribute across all tokens
             if (totalUSD > 0 && tokenInfos.length > 0) {
-                uint256 totalDistributedAmount = 0;
                 for (uint256 i = 0; i < tokenInfos.length - 1; i++) {
-                    uint256 tokenPrice = priceOracle.getAssetPrice(address(tokenInfos[i].token));
-                    uint256 amountToSwap = totalUSD / tokenInfos.length / tokenPrice;
-                    totalDistributedAmount += amountToSwap;
-
+                    uint256 amountToSwap =
+                        totalUSD * PRICE_ORACLE_DECIMALS / tokenInfos.length / baseTokenPrice / TOKEN_INDEX_DECIMALS;
+                    totalRequiredAmount += amountToSwap;
                     swaps[i] = SwapInfo({
                         tokenIn: address(baseToken),
                         tokenOut: address(tokenInfos[i].token),
-                        amountIn: amountToSwap
+                        amountIn: amountToSwap + swaps[i].amountIn
                     });
                 }
 
                 // Handle the last token separately with the remaining amount
                 uint256 lastIndex = tokenInfos.length - 1;
-                uint256 remainingAmount = totalUSD - totalDistributedAmount;
+                uint256 remainingAmount = amount - totalRequiredAmount;
                 swaps[lastIndex] = SwapInfo({
                     tokenIn: address(baseToken),
                     tokenOut: address(tokenInfos[lastIndex].token),
-                    amountIn: remainingAmount
+                    amountIn: remainingAmount + swaps[lastIndex].amountIn
                 });
             }
             return swaps;

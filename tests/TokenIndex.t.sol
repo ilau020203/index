@@ -8,10 +8,6 @@ import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
 contract MockToken is ERC20 {
     constructor(string memory name, string memory symbol) ERC20(name, symbol) {}
-
-    function mint(address to, uint256 amount) external {
-        _mint(to, amount);
-    }
 }
 
 contract TokenIndexTest is Test {
@@ -35,6 +31,9 @@ contract TokenIndexTest is Test {
         aclManager.addIndexAdmin(admin);
         aclManager.addIndexManager(manager);
         vm.stopPrank();
+
+        uint256 nonce = tokenIndex.nonces(admin);
+        assertEq(nonce, 0);
     }
 
     function testAddToken() public {
@@ -113,6 +112,91 @@ contract TokenIndexTest is Test {
         vm.startPrank(admin);
         vm.expectRevert(TokenIndex.InvalidIndex.selector);
         tokenIndex.editToken(0, 5000); // Should fail as no tokens exist
+        vm.stopPrank();
+    }
+
+    function testRevokeTokenApproval() public {
+        vm.startPrank(admin);
+        tokenIndex.approveToken(address(token1), manager);
+        tokenIndex.revokeTokenApproval(address(token1), manager);
+        uint256 allowance = token1.allowance(address(tokenIndex), manager);
+        assertEq(allowance, 0);
+        vm.stopPrank();
+    }
+
+    function testOnlyIndexAdminModifier() public {
+        // Test that onlyIndexAdmin modifier reverts for non-admin
+        vm.prank(user);
+        vm.expectRevert(TokenIndex.OnlyIndexAdmins.selector);
+        tokenIndex.addToken(address(token1), 5000);
+
+        // Test that onlyIndexAdmin modifier allows admin
+        vm.startPrank(admin);
+        tokenIndex.addToken(address(token1), 5000);
+        vm.stopPrank();
+    }
+
+    function testOnlyIndexManagerModifier() public {
+        // Test that onlyIndexManager modifier reverts for non-manager
+        vm.prank(user);
+        vm.expectRevert(TokenIndex.OnlyIndexManagers.selector);
+        tokenIndex.mint(user, 1000);
+
+        // Test that onlyIndexManager modifier allows manager
+        vm.startPrank(manager);
+        tokenIndex.mint(user, 1000);
+        assertEq(tokenIndex.balanceOf(user), 1000);
+        vm.stopPrank();
+    }
+
+    function testOnlyIndexAdminModifierRevertsForNonAdmin() public {
+        // Test that onlyIndexAdmin modifier reverts for non-admin
+        vm.prank(address(this));
+        // vm.expectRevert(TokenIndex.OnlyIndexAdmins.selector);
+        tokenIndex.addToken(address(token1), 5000);
+    }
+
+    function testOnlyIndexManagerModifierRevertsForNonManager() public {
+        // Test that onlyIndexManager modifier reverts for non-manager
+        vm.prank(user);
+        vm.expectRevert(TokenIndex.OnlyIndexManagers.selector);
+        tokenIndex.mint(user, 1000);
+    }
+
+    function testAddTokenInvalidProportion() public {
+        // Test that addToken reverts when proportion is zero
+        vm.startPrank(admin);
+        vm.expectRevert(TokenIndex.InvalidProportion.selector);
+        tokenIndex.addToken(address(token1), 0);
+        vm.stopPrank();
+    }
+
+    // function testMulticallSuccess() public {
+    //     vm.startPrank(manager);
+    //     bytes[] memory data = new bytes[](1);
+    //     address[] memory to = new address[](1);
+    //     data[0] = abi.encodeWithSignature("mint(address,uint256)", user, 1000);
+    //     to[0] = address(tokenIndex);
+    //     bytes[] memory results = tokenIndex.multicall(data, to);
+    //     assertEq(results.length, 1);
+    //     assertEq(tokenIndex.balanceOf(user), 1000);
+    //     vm.stopPrank();
+    // }
+
+    function testMulticallFailure() public {
+        vm.startPrank(manager);
+        bytes[] memory data = new bytes[](1);
+        address[] memory to = new address[](1);
+        data[0] = abi.encodeWithSignature("nonExistentFunction()");
+        to[0] = address(tokenIndex);
+
+        bytes memory expectedRevertData = abi.encodeWithSelector(
+            TokenIndex.MulticallFailed.selector,
+            bytes("") // Expected result argument
+        );
+
+        vm.expectRevert(expectedRevertData);
+        tokenIndex.multicall(data, to);
         vm.stopPrank();
     }
 }

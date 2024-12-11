@@ -49,8 +49,7 @@ interface IIndexManager {
 
     /// @notice Emitted when protocol fees are withdrawn
     /// @param recipient Address receiving the fees
-    /// @param periodsElapsed Number of fee periods that have elapsed
-    event FeeWithdrawn(address indexed recipient, uint256 periodsElapsed);
+    event FeeWithdrawn(address indexed recipient);
 
     /// @notice Emitted when the index is rebalanced
     /// @param swapParams Array of swap parameters executed during rebalancing
