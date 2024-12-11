@@ -3,7 +3,7 @@ pragma solidity 0.8.28;
 
 import {Test} from "forge-std/Test.sol";
 
-import {PriceOracle} from "../src/contracts/PriceOracle.sol";
+import {PriceOracle, IPriceOracle} from "../src/contracts/PriceOracle.sol";
 import {ACLManager} from "../src/contracts/ACLManager.sol";
 import {AggregatorV3Mock} from "../src/mocks/AggregatorV3Mock.sol";
 
@@ -82,7 +82,7 @@ contract PriceOracleTest is Test {
         address[] memory sources = new address[](1);
         sources[0] = address(aggregatorMock);
 
-        vm.expectRevert(PriceOracle.InconsistentParamsLength.selector);
+        vm.expectRevert(IPriceOracle.InconsistentParamsLength.selector);
         priceOracle.setAssetSources(assets, sources);
     }
 
@@ -94,7 +94,7 @@ contract PriceOracleTest is Test {
         sources[0] = address(aggregatorMock);
 
         vm.prank(address(0xdead));
-        vm.expectRevert(PriceOracle.OnlyIndexAdmins.selector);
+        vm.expectRevert(IPriceOracle.OnlyIndexAdmins.selector);
         priceOracle.setAssetSources(assets, sources);
     }
 
@@ -105,7 +105,7 @@ contract PriceOracleTest is Test {
 
     function testSetFallbackOracleRevertOnNonAdmin() public {
         vm.prank(address(0xdead));
-        vm.expectRevert(PriceOracle.OnlyIndexAdmins.selector);
+        vm.expectRevert(IPriceOracle.OnlyIndexAdmins.selector);
         priceOracle.setFallbackOracle(address(fallbackOracle));
     }
 
