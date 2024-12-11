@@ -25,8 +25,7 @@ contract IndexManager is IIndexManager {
     uint256 private constant PROPORTION_DECIMALS = 1e18;
     uint256 public constant override FEE_DENOMINATOR = 10000; // 10000 represents 100%
     uint256 public override lastFeeWithdrawal;
-    uint256 public override feePercentage; // Fee percentage in basis points (1% = 100 basis points)
-    // Mapping to store paths for token pairs
+    uint256 public override feePercentage;
     mapping(address => mapping(address => bytes)) public override tokenPaths;
 
     modifier onlyIndexAdmin() {
@@ -386,7 +385,9 @@ contract IndexManager is IIndexManager {
                     tokenIn: address(tokenInfos[surplusTokenIds[lastIndex]].token),
                     tokenOut: address(baseToken),
                     amountIn: (remainingUsd * (10 ** tokenInfos[surplusTokenIds[lastIndex]].token.decimals()))
-                        * PRICE_ORACLE_DECIMALS / priceOracle.getAssetPrice(address(tokenInfos[surplusTokenIds[lastIndex]].token)) / TOKEN_INDEX_DECIMALS
+                        * PRICE_ORACLE_DECIMALS
+                        / priceOracle.getAssetPrice(address(tokenInfos[surplusTokenIds[lastIndex]].token))
+                        / TOKEN_INDEX_DECIMALS
                 });
                 swapCount++;
             }
@@ -427,8 +428,8 @@ contract IndexManager is IIndexManager {
                 uint256 totalDistributedAmount = 0;
                 for (uint256 i = 0; i < tokenInfos.length - 1; i++) {
                     uint256 tokenPrice = priceOracle.getAssetPrice(address(tokenInfos[i].token));
-                    uint256 amountToSwap = totalUSD * (10 ** tokenInfos[i].token.decimals())
-                        / tokenInfos.length * PRICE_ORACLE_DECIMALS / tokenPrice / TOKEN_INDEX_DECIMALS;
+                    uint256 amountToSwap = totalUSD * (10 ** tokenInfos[i].token.decimals()) / tokenInfos.length
+                        * PRICE_ORACLE_DECIMALS / tokenPrice / TOKEN_INDEX_DECIMALS;
                     totalDistributedAmount += amountToSwap;
 
                     swaps[i] = SwapInfo({

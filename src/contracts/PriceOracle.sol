@@ -13,11 +13,6 @@ contract PriceOracle is IPriceOracle {
     mapping(address => AggregatorV3Interface) private _assetsSources;
     IPriceOracleGetter private _fallbackOracle;
 
-    /// @notice Thrown when a non-admin tries to call admin-only functions
-    error OnlyIndexAdmins();
-    /// @notice Thrown when assets and sources arrays have different lengths
-    error InconsistentParamsLength();
-
     /// @notice Constructor
     /// @param aclManager The address of ACL manager contract
     constructor(address aclManager) {

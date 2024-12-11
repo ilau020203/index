@@ -16,7 +16,7 @@ interface IWETHGateway {
     /// @notice Returns the index manager contract address
     function indexManager() external view returns (IIndexManager);
 
-    /// @notice Returns the WETH contract address  
+    /// @notice Returns the WETH contract address
     function WETH() external view returns (IWETH);
 
     /// @notice Deposits ETH into the index by first wrapping to WETH

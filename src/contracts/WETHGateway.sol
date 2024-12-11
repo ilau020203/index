@@ -20,7 +20,7 @@ contract WETHGateway is IWETHGateway {
         WETH.approve(address(indexManager), type(uint256).max);
         indexManager.tokenIndex().approve(address(indexManager), type(uint256).max);
     }
-    
+
     receive() external payable {}
 
     /// @inheritdoc IWETHGateway
@@ -40,7 +40,7 @@ contract WETHGateway is IWETHGateway {
         uint256 wethBalance = WETH.balanceOf(address(this));
 
         WETH.withdraw(wethBalance);
-        
+
         recipient.transfer(wethBalance);
     }
 

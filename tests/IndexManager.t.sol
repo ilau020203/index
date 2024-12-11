@@ -345,7 +345,7 @@ contract IndexManagerTest is Test {
         // Then withdraw
         uint256 usdtBalanceBefore = IERC20(USDT).balanceOf(recipient);
 
-        indexManager.withdraw(44*1e19, recipient);
+        indexManager.withdraw(44 * 1e19, recipient);
 
         vm.rollFork(block.number + 1000);
         indexTokens = tokenIndex.balanceOf(address(this));
@@ -363,6 +363,7 @@ contract IndexManagerTest is Test {
         assertEq(IERC20(GRT).balanceOf(address(tokenIndex)), 0, "GRT balance not 0");
         assertEq(tokenIndex.balanceOf(address(this)), 0, "Index tokens not burned");
     }
+
     function testWithdrawDoubleWithSmallAmount2() public {
         // First deposit
         uint256 depositAmount = 1000 * 1e6; // 1000 USDT
@@ -373,7 +374,7 @@ contract IndexManagerTest is Test {
         // Then withdraw
         uint256 usdtBalanceBefore = IERC20(USDT).balanceOf(recipient);
 
-        indexManager.withdraw(4*1e19, recipient);
+        indexManager.withdraw(4 * 1e19, recipient);
 
         vm.rollFork(block.number + 1000);
         indexTokens = tokenIndex.balanceOf(address(this));
