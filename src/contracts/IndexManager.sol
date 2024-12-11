@@ -6,7 +6,6 @@ import "../interfaces/ITokenIndex.sol";
 import "../interfaces/IPriceOracleGetter.sol";
 
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import "forge-std/console.sol";
 
 contract IndexManager is IIndexManager {
     using SafeERC20 for IERC20Metadata;
@@ -81,13 +80,7 @@ contract IndexManager is IIndexManager {
         tokenIndex.burn(msg.sender, indexTokenAmount);
 
         SwapInfo[] memory swaps = calculateRequiredSwapsForSurplusTokens(userShare);
-        console.log("Swaps:");
-        for (uint256 i = 0; i < swaps.length; i++) {
-            console.log("Swap index:", i);
-            console.log("Token in:", swaps[i].tokenIn);
-            console.log("Token out:", swaps[i].tokenOut);
-            console.log("Amount in:", swaps[i].amountIn);
-        }
+
         bytes[] memory calls = new bytes[](swaps.length);
         address[] memory targets = new address[](swaps.length);
         for (uint256 i = 0; i < swaps.length; i++) {
@@ -401,18 +394,14 @@ contract IndexManager is IIndexManager {
             return finalSwaps;
         } else {
             // First try to cover imbalances
-            console.log("3");
             swaps = new SwapInfo[](tokenInfos.length);
 
             for (uint256 i = 0; i < surplusTokenIds.length; i++) {
                 if (surplusDeltas[i] > 0) {
                     uint256 requiredUSD = uint256(surplusDeltas[i]);
-                    console.log("requiredUSD:", requiredUSD);
                     uint256 tokenPrice = priceOracle.getAssetPrice(address(tokenInfos[surplusTokenIds[i]].token));
-                    console.log("tokenPrice:", tokenPrice);
                     uint256 amount = (requiredUSD * (10 ** tokenInfos[surplusTokenIds[i]].token.decimals()))
                         * PRICE_ORACLE_DECIMALS / tokenPrice / TOKEN_INDEX_DECIMALS;
-                    console.log("amount:", amount);
 
                     swaps[surplusTokenIds[i]] = SwapInfo({
                         tokenIn: address(tokenInfos[surplusTokenIds[i]].token),
@@ -447,8 +436,6 @@ contract IndexManager is IIndexManager {
                     amountIn: swaps[lastIndex].amountIn + remainingAmount
                 });
             }
-
-            console.log("32");
 
             return swaps;
         }
