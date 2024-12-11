@@ -26,9 +26,7 @@ contract PriceOracle is IPriceOracle {
 
     /// @notice Modifier to restrict access to index admins only
     modifier onlyIndexAdmins() {
-        if (!ACL_MANAGER.hasRole(ACL_MANAGER.INDEX_ADMIN_ROLE(), msg.sender)) {
-            revert OnlyIndexAdmins();
-        }
+        require(ACL_MANAGER.hasRole(ACL_MANAGER.INDEX_ADMIN_ROLE(), msg.sender), OnlyIndexAdmins());
         _;
     }
 

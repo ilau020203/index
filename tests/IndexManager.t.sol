@@ -315,9 +315,65 @@ contract IndexManagerTest is Test {
         address recipient = address(0xfffffffffffffff);
         // Then withdraw
         uint256 usdtBalanceBefore = IERC20(USDT).balanceOf(recipient);
-        console.log("indexTokens", indexTokens);
 
         indexManager.withdraw(indexTokens - 1e19, recipient);
+
+        vm.rollFork(block.number + 1000);
+        indexTokens = tokenIndex.balanceOf(address(this));
+
+        indexManager.withdraw(indexTokens, recipient);
+
+        uint256 usdtBalanceAfter = IERC20(USDT).balanceOf(recipient);
+        assertTrue(usdtBalanceAfter > usdtBalanceBefore, "No USDT received");
+
+        // Check all token balances in index are now 0
+        assertEq(IERC20(USDT).balanceOf(address(tokenIndex)), 0, "USDT balance not 0");
+        assertEq(IERC20(WBTC).balanceOf(address(tokenIndex)), 0, "WBTC balance not 0");
+        assertEq(IERC20(USDC).balanceOf(address(tokenIndex)), 0, "USDC balance not 0");
+        assertEq(IERC20(DAI).balanceOf(address(tokenIndex)), 0, "DAI balance not 0");
+        assertEq(IERC20(GRT).balanceOf(address(tokenIndex)), 0, "GRT balance not 0");
+        assertEq(tokenIndex.balanceOf(address(this)), 0, "Index tokens not burned");
+    }
+
+    function testWithdrawDoubleWithSmallAmount() public {
+        // First deposit
+        uint256 depositAmount = 1000 * 1e6; // 1000 USDT
+        indexManager.deposit(depositAmount, address(this));
+
+        uint256 indexTokens = tokenIndex.balanceOf(address(this));
+        address recipient = address(0xfffffffffffffff);
+        // Then withdraw
+        uint256 usdtBalanceBefore = IERC20(USDT).balanceOf(recipient);
+
+        indexManager.withdraw(44*1e19, recipient);
+
+        vm.rollFork(block.number + 1000);
+        indexTokens = tokenIndex.balanceOf(address(this));
+
+        indexManager.withdraw(indexTokens, recipient);
+
+        uint256 usdtBalanceAfter = IERC20(USDT).balanceOf(recipient);
+        assertTrue(usdtBalanceAfter > usdtBalanceBefore, "No USDT received");
+
+        // Check all token balances in index are now 0
+        assertEq(IERC20(USDT).balanceOf(address(tokenIndex)), 0, "USDT balance not 0");
+        assertEq(IERC20(WBTC).balanceOf(address(tokenIndex)), 0, "WBTC balance not 0");
+        assertEq(IERC20(USDC).balanceOf(address(tokenIndex)), 0, "USDC balance not 0");
+        assertEq(IERC20(DAI).balanceOf(address(tokenIndex)), 0, "DAI balance not 0");
+        assertEq(IERC20(GRT).balanceOf(address(tokenIndex)), 0, "GRT balance not 0");
+        assertEq(tokenIndex.balanceOf(address(this)), 0, "Index tokens not burned");
+    }
+    function testWithdrawDoubleWithSmallAmount2() public {
+        // First deposit
+        uint256 depositAmount = 1000 * 1e6; // 1000 USDT
+        indexManager.deposit(depositAmount, address(this));
+
+        uint256 indexTokens = tokenIndex.balanceOf(address(this));
+        address recipient = address(0xfffffffffffffff);
+        // Then withdraw
+        uint256 usdtBalanceBefore = IERC20(USDT).balanceOf(recipient);
+
+        indexManager.withdraw(4*1e19, recipient);
 
         vm.rollFork(block.number + 1000);
         indexTokens = tokenIndex.balanceOf(address(this));

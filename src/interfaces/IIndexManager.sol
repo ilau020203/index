@@ -74,6 +74,9 @@ interface IIndexManager {
     /// @notice Error thrown when attempting to swap tokens without a configured path
     error PathNotSet();
 
+    /// @notice Error thrown when attempting to swap tokens with an amount of 0
+    error SwapAmountZero();
+
     /// @notice Error thrown when attempting to withdraw fees too soon after previous withdrawal
     error FeeWithdrawalTooSoon();
 
